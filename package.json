@@ -1,0 +1,14 @@
+{
+  "name": "ukademik-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ukademiklar kanali uchun Telegram bot va Mini App: kunlik Zakovat savoli, Zakovat soati, Svoyak, To'siq, Futbol",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "DEV=1 PORT=3000 node server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
