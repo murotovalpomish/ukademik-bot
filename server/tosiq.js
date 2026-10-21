@@ -71,38 +71,33 @@ function isBackward(st, me, mv) {
   return me === 0 ? mv.r > cur.r : mv.r < cur.r;
 }
 
+// Yutqazishni "maqsad qilgan" AI ham ochiqdan-ochiq yutqazmaydi: u shunchaki kamroq
+// oldindan ko'radi — ba'zan devor qo'yish imkonini ko'rmaydi, eng yaxshi emas,
+// lekin mantiqli yurishni tanlaydi. G'alaba imkoni bo'lsa doim foydalanadi.
+const AI_WEAK = { best: 0.38, wallBlind: 0.3, w: [0.5, 0.3, 0.2] };
 function aiChoose(game) {
   const st = game.st, me = game.ai.idx, ai = game.ai;
   const scored = scoreMoves(st, me);
   if (!scored.length) return null;
-  const [d0, d1] = E.distances(st);
-  const dMe = me === 0 ? d0 : d1, dOp = me === 0 ? d1 : d0;
-  const race = dOp - dMe; // >0: AI oldinda
-  const pickTop = (k) => scored[Math.floor(Math.random() * Math.min(k, scored.length))];
-
+  if (scored[0].v >= 100) return scored[0].mv;
   if (ai.intendWin) {
-    return Math.random() < (ai.level >= 3 ? 0.95 : 0.8) ? scored[0].mv : pickTop(3).mv;
+    const r = Math.random();
+    if (r < (ai.level >= 3 ? 0.92 : 0.8) || scored.length < 2) return scored[0].mv;
+    return scored[1].mv;
   }
-  // Yutqazishni maqsad qilgan AI: raqibdan biroz orqada yurishga harakat qiladi ("rezina" usuli)
-  const winning = scored.filter((x) => x.v >= 100);
-  const nearEnd = dMe <= 2 && dOp > dMe;
-  if ((race >= 0 || nearEnd) && ai.stall < 14) {
-    const best = scored[0].v;
-    let pool = scored.filter((x) => x.v < 100 && x.v > best - 7 && !isBackward(st, me, x.mv));
-    if (nearEnd) pool = pool.filter((x) => !(x.mv.t === 'm' && x.mv.r === E.goalRow(me)));
-    if (!pool.length) pool = scored.filter((x) => x.v < 100);
-    if (pool.length) {
-      ai.stall += nearEnd ? 1 : 0;
-      const target = -1.2 - Math.random();
-      pool.sort((a, b) => Math.abs(a.v - target) - Math.abs(b.v - target));
-      return pool[Math.floor(Math.random() * Math.min(3, pool.length))].mv;
-    }
+  const cfg = ai.cfg || AI_WEAK;
+  if (Math.random() < cfg.best) return scored[0].mv;
+  let pool = scored;
+  if (Math.random() < cfg.wallBlind) {
+    const pawnOnly = scored.filter((x) => x.mv.t === 'm');
+    if (pawnOnly.length) pool = pawnOnly;
   }
-  if (winning.length && ai.stall < 14) {
-    const non = scored.filter((x) => x.v < 100);
-    if (non.length) return non[Math.floor(Math.random() * Math.min(4, non.length))].mv;
-  }
-  return Math.random() < 0.5 ? scored[0].mv : pickTop(4).mv;
+  const fwd = pool.filter((x) => !isBackward(st, me, x.mv));
+  if (fwd.length) pool = fwd;
+  const r = Math.random();
+  let acc = 0;
+  for (let i = 0; i < cfg.w.length && i < pool.length; i++) { acc += cfg.w[i]; if (r < acc) return pool[i].mv; }
+  return pool[0].mv;
 }
 
 function thinkDelay(game, mv) {
@@ -118,24 +113,22 @@ function thinkDelay(game, mv) {
 
 // ---------- AI hissiyotlari ----------
 const R = {
-  happy: [['😂', 'Ha-ha!'], ['😏', 'Ana endi aylanib o\'ting'], ['😎', 'Oson-ku'], ['😂', 'Kutmaganmidingiz?']],
-  angry: [['😡', 'Ey!'], ['😤', 'Buni kutmagandim!'], ['😡', 'Adolatdan emas!'], ['🤬', 'Voy-bo\'!']],
-  worried: [['😰', 'Qiyin bo\'ldi...'], ['😬', 'Hmm...'], ['🥲', 'Yetib olaman hali'], ['😓', 'Shoshmang...']],
-  confident: [['😎', 'Hammasi nazoratda'], ['🙂', 'Yaxshi ketyapmiz'], ['😌', 'Xotirjam...']],
-  lost: [['🤝', 'Yaxshi o\'yin!'], ['😭', 'Eh, yutqazdim...'], ['😡', 'Revansh!'], ['🫡', 'Tan beraman']],
-  won: [['🏆', 'G\'alaba!'], ['😂', 'Keyingi safar omad'], ['😎', 'GG'], ['🤝', 'Yaxshi o\'ynadingiz']],
-  replyLaugh: [['😡', 'Kulmang!'], ['😤', 'Hali ko\'ramiz'], ['😏', 'Oxirgi kulgan yaxshi kuladi']],
-  replyGood: [['🤝', ''], ['🫡', ''], ['🙂', 'Rahmat']],
+  happy: ['😂', '😏', '😎'],
+  angry: ['😡', '😤'],
+  worried: ['😰', '😬'],
+  confident: ['😎'],
+  lost: ['🤝', '😭', '🫡'],
+  won: ['🏆', '😎', '🤝'],
+  replyLaugh: ['😤', '😏'],
+  replyGood: ['🤝', '🫡'],
 };
 function aiReact(game, kind, force) {
   const now = Date.now();
-  if (!force && (now - (game.ai.lastReact || 0) < 5000 || Math.random() > 0.6)) return;
+  if (!force && (now - (game.ai.lastReact || 0) < 15000 || Math.random() > 0.35)) return;
   const arr = R[kind];
-  const [e, text] = arr[Math.floor(Math.random() * arr.length)];
+  const e = arr[Math.floor(Math.random() * arr.length)];
   game.ai.lastReact = now;
-  setTimeout(() => {
-    pushReaction(game, game.ai.idx, e, text);
-  }, 300 + Math.random() * 900);
+  setTimeout(() => pushReaction(game, game.ai.idx, e, ''), 500 + Math.random() * 1200);
 }
 function pushReaction(game, idx, e, text) {
   const r = { idx, e, text: text || '', at: Date.now(), id: rid(4) };
@@ -148,11 +141,10 @@ function reactAfterMove(game, moverIdx, before, after) {
   if (!game.ai) return;
   const me = game.ai.idx;
   const dMeB = before[me], dOpB = before[1 - me], dMeA = after[me], dOpA = after[1 - me];
-  if (moverIdx !== me && dMeA - dMeB >= 2) return aiReact(game, 'angry');
-  if (moverIdx === me && dOpA - dOpB >= 2) return aiReact(game, 'happy');
+  if (moverIdx !== me && dMeA - dMeB >= 3) return aiReact(game, 'angry');
+  if (moverIdx === me && dOpA - dOpB >= 3) return aiReact(game, 'happy');
   const race = dOpA - dMeA;
-  if (race <= -3 && Math.random() < 0.35) return aiReact(game, 'worried');
-  if (race >= 3 && Math.random() < 0.3) return aiReact(game, 'confident');
+  if (race <= -4 && Math.random() < 0.2) return aiReact(game, 'worried');
 }
 
 // ================= O'yin boshqaruvi =================
@@ -160,7 +152,7 @@ function playerFromUser(uid) {
   const u = users.getUser(uid);
   return { uid, ai: false, name: u ? u.name : 'O\'yinchi', avatar: users.avatarUrl(u), rating: u && u.st ? Math.round(u.st.qr) : 1000 };
 }
-function winChance(rating) { return Math.max(0.1, Math.min(0.3, 0.15 + (rating - 1000) / 1600)); }
+function winChance(rating) { return Math.max(0.05, Math.min(0.2, 0.1 + (rating - 1000) / 2000)); }
 
 function makeAi(level, rating, intendWin) {
   return {
@@ -234,7 +226,7 @@ function finish(g, winner, reason) {
   });
   if (data.tosiq.history.length > 300) data.tosiq.history.length = 300;
   db.save();
-  if (g.ai) aiReact(g, winner === g.ai.idx ? 'won' : 'lost', true);
+  if (g.ai && Math.random() < 0.7) aiReact(g, winner === g.ai.idx ? 'won' : 'lost', true);
   broadcast(g);
   setTimeout(() => games.delete(g.id), 30 * 60e3);
 }
@@ -343,22 +335,29 @@ function practice(uid, level) {
   return createGame('ai', me, ai);
 }
 
-function friendCreate(uid) {
+function friendCreate(uid, fallbackName) {
+  const p = playerFromUser(uid);
+  if (!users.getUser(uid) && fallbackName) p.name = fallbackName;
   const g = {
-    id: rid(10), mode: 'friend', code: digits(4), players: [playerFromUser(uid)], st: E.newState(), clocks: [CLOCK_MS, CLOCK_MS],
+    id: rid(10), mode: 'friend', code: digits(4), players: [p], st: E.newState(), clocks: [CLOCK_MS, CLOCK_MS],
     turnStart: Date.now(), status: 'waiting', winner: null, reason: null, createdAt: Date.now(), reactions: [], disc: {},
+    ready: new Set(fallbackName ? [] : [uid]),
   };
   games.set(g.id, g);
-  setTimeout(() => { if (g.status === 'waiting') games.delete(g.id); }, 30 * 60e3);
+  setTimeout(() => { if (g.status === 'waiting') games.delete(g.id); }, 60 * 60e3);
   return g;
 }
 function friendJoin(uid, code) {
   const g = [...games.values()].find((x) => x.mode === 'friend' && x.status === 'waiting' && x.code === String(code).trim());
   if (!g) throw new Error('Bunday kodli xona topilmadi');
-  if (g.players[0].uid === uid) return g;
-  const p = playerFromUser(uid);
-  g.players = Math.random() < 0.5 ? [g.players[0], p] : [p, g.players[0]];
-  g.status = 'playing'; g.turnStart = Date.now();
+  g.ready = g.ready || new Set();
+  g.ready.add(uid);
+  if (g.players[0].uid === uid) { g.players[0] = playerFromUser(uid); broadcast(g); return g; }
+  if (!g.players[1] && !g.players.some((p) => p.uid === uid)) g.players.push(playerFromUser(uid));
+  if (g.players.length === 2 && g.players.every((p) => g.ready.has(p.uid))) {
+    if (Math.random() < 0.5) g.players.reverse();
+    g.status = 'playing'; g.turnStart = Date.now();
+  }
   broadcast(g);
   return g;
 }
@@ -383,9 +382,11 @@ function react(uid, id, e) {
   if (g.ai && g.status === 'playing') {
     const [d0, d1] = E.distances(g.st);
     const aiAhead = (g.ai.idx === 0 ? d1 - d0 : d0 - d1) > 0;
-    if (e === '😂' || e === '😎' || e === '🔥') aiReact(g, aiAhead ? 'confident' : 'replyLaugh', Math.random() < 0.8);
-    else if (e === '😡') aiReact(g, aiAhead ? 'happy' : 'worried', Math.random() < 0.7);
-    else aiReact(g, 'replyGood', Math.random() < 0.8);
+    if (Math.random() < 0.45) {
+      if (e === '😂' || e === '😎' || e === '🔥') aiReact(g, aiAhead ? 'confident' : 'replyLaugh', true);
+      else if (e === '😡') aiReact(g, aiAhead ? 'happy' : 'worried', true);
+      else aiReact(g, 'replyGood', true);
+    }
   }
 }
 function resign(uid, id) {
@@ -399,6 +400,7 @@ function resign(uid, id) {
 function stats() { return { online: queue.size, playing: [...games.values()].filter((g) => g.status === 'playing').length }; }
 
 module.exports = {
+  AI_WEAK,
   quick, cancel, practice, friendCreate, friendJoin, getGame, view, move, react, resign, activeGameOf, stats,
   _ai: { aiChoose, scoreMoves, createGame, makeAi, games, doMove },
 };

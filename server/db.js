@@ -17,7 +17,10 @@ function defaults() {
     svoyak: { games: {} },
     tosiq: { history: [] },
     football: { seq: 0, matches: [] },
-    meta: { createdAt: Date.now(), backup: null },
+    bank: { seq: 0, items: [], progress: {} },
+    penalty: { tournaments: {}, history: [] },
+    groups: {},
+    meta: { createdAt: Date.now(), backup: null, superAdmins: [] },
   };
 }
 

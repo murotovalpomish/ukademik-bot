@@ -13,6 +13,10 @@ const daily = require('./daily');
 const svoyak = require('./svoyak');
 const tosiq = require('./tosiq');
 const football = require('./football');
+const penalty = require('./penalty');
+const bank = require('./bank');
+bot.setGames(penalty, tosiq);
+penalty.setNotifier(bot.notifyTour);
 
 const WEBHOOK_PATH = '/tg/' + crypto.createHash('sha256').update('wh:' + (cfg.BOT_TOKEN || 'dev')).digest('hex').slice(0, 24);
 const WEBHOOK_SECRET = crypto.createHash('sha256').update('sec:' + (cfg.BOT_TOKEN || 'dev')).digest('hex').slice(0, 32);
@@ -73,7 +77,10 @@ async function requireUser(ctx) {
   if (!u) throw new HttpError(403, 'Ro\'yxatdan o\'ting', { gate: 'captcha' });
   users.touch(u, tgUser);
   ctx.user = u;
-  if (ctx.opts.admin && !(await users.isAdmin(u.id))) throw new HttpError(403, 'Faqat adminlar uchun');
+  ctx.sup = await users.isSuper(u.id);
+  svoyak.markSuper(u.id, ctx.sup);
+  if (ctx.opts.admin && !ctx.sup && !(await users.isAdmin(u.id))) throw new HttpError(403, 'Faqat adminlar uchun');
+  if (ctx.opts.super && !ctx.sup) throw new HttpError(403, 'Faqat bosh admin uchun');
 }
 
 // ---- Umumiy ----
@@ -86,7 +93,9 @@ route('GET', '/api/me', async (ctx) => {
   const u = users.getUser(t.id);
   if (!u) return { gate: 'captcha', tgName: [t.first_name, t.last_name].filter(Boolean).join(' ') };
   users.touch(u, t);
-  return { gate: 'ok', user: users.profile(u), isAdmin: await users.isAdmin(u.id), bot: bot.username(), channelLink: cfg.CHANNEL_LINK };
+  const sup = await users.isSuper(u.id);
+  svoyak.markSuper(u.id, sup);
+  return { gate: 'ok', user: users.profile(u), isAdmin: sup || await users.isAdmin(u.id), isSuper: sup, canClaim: await users.canClaimSuper(u.id), bot: bot.username(), channelLink: cfg.CHANNEL_LINK };
 }, { noUser: true });
 
 route('POST', '/api/recheck', async (ctx) => { users.clearSub(ctx.uid); return { ok: await users.isSubscribed(ctx.uid) }; }, { noUser: true });
@@ -126,8 +135,9 @@ route('POST', '/api/profile', async (ctx) => {
 
 route('GET', '/api/home', async (ctx) => {
   const dv = daily.userView(ctx.uid);
-  const live = svoyak.list('live', ctx.uid).filter((g) => g.status === 'live').length;
-  return { daily: { open: dv.open, next: dv.next, last: dv.recent[0] || null }, svoyakLive: live, tosiq: tosiq.stats(), activeGame: (tosiq.activeGameOf(ctx.uid) || {}).id || null };
+  const live = svoyak.list('live', ctx.uid, ctx.sup).filter((g) => g.status === 'live').length;
+  const bk = bank.list(ctx.uid);
+  return { daily: { open: dv.open, next: dv.next, last: dv.recent[0] || null }, svoyakLive: live, tosiq: tosiq.stats(), activeGame: (tosiq.activeGameOf(ctx.uid) || {}).id || null, bank: { total: bk.total, solved: bk.solved }, penActive: (penalty.activeOf(ctx.uid) || {}).id || null };
 });
 
 route('GET', '/api/rating', async (ctx) => {
@@ -163,7 +173,7 @@ route('GET', '/api/stream', async (ctx) => {
   const uid = hub.tokenUid(ctx.query.get('t'));
   if (!uid) throw new HttpError(401, 'token');
   const chs = String(ctx.query.get('ch') || '').split(',').filter(Boolean).slice(0, 5)
-    .filter((c) => /^(sv|q|daily|u)(:[\w-]+)?$/.test(c) && (!c.startsWith('u:') || c === 'u:' + uid));
+    .filter((c) => /^(sv|q|daily|u|pen|pt)(:[\w-]+)?$/.test(c) && (!c.startsWith('u:') || c === 'u:' + uid));
   hub.attach(ctx.req, ctx.res, uid, chs);
   return null;
 }, { public: true });
@@ -181,18 +191,59 @@ route('GET', '/api/qimg/:id', async (ctx) => {
   return null;
 }, { public: true });
 
-// ---- Svoyak ----
-route('GET', '/api/sv', async (ctx) => ({ games: svoyak.list(ctx.query.get('f') || 'live', ctx.uid) }));
+// ---- Shaxsiy o'yin (Svoyak) ----
+route('GET', '/api/sv', async (ctx) => ({ games: svoyak.list(ctx.query.get('f') || 'live', ctx.uid, ctx.sup, ctx.query.get('q')) }));
 route('POST', '/api/sv', async (ctx) => { const g = svoyak.create(ctx.uid, ctx.body); return { id: g.id, code: g.code }; });
 route('POST', '/api/sv/join', async (ctx) => { const g = svoyak.joinByCode(ctx.uid, ctx.body.code); return { id: g.id }; });
-route('GET', '/api/sv/:id', async (ctx) => svoyak.view(svoyak.get(ctx.params.id), ctx.uid));
-route('POST', '/api/sv/:id/act', async (ctx) => svoyak.action(ctx.uid, ctx.params.id, ctx.body || {}));
+route('GET', '/api/sv/:id', async (ctx) => svoyak.view(svoyak.get(ctx.params.id), ctx.uid, ctx.sup));
+route('GET', '/api/sv/:id/chat', async (ctx) => ({ chat: svoyak.chatList(ctx.uid, ctx.params.id, ctx.sup) }));
+route('POST', '/api/sv/:id/voice', async (ctx) => svoyak.saveVoice(ctx.uid, ctx.params.id, ctx.sup, ctx.body));
+route('POST', '/api/sv/:id/act', async (ctx) => svoyak.action(ctx.uid, ctx.params.id, ctx.body || {}, ctx.sup));
 route('POST', '/api/sv/:id/join', async (ctx) => {
   const g = svoyak.get(ctx.params.id);
   if (String(ctx.body.code || '').trim() !== g.code) throw new Error('Kod noto\'g\'ri');
   svoyak.joinByCode(ctx.uid, g.code); return { ok: true };
 });
-route('DELETE', '/api/sv/:id', async (ctx) => { svoyak.remove(ctx.uid, ctx.params.id, await users.isAdmin(ctx.uid)); return { ok: true }; });
+route('DELETE', '/api/sv/:id', async (ctx) => { svoyak.remove(ctx.uid, ctx.params.id, ctx.sup); return { ok: true }; });
+route('GET', '/api/voice/:gid/:vid', async (ctx) => {
+  const f = svoyak.voiceFile(ctx.params.vid, ctx.params.gid);
+  if (!f) { ctx.res.writeHead(404); ctx.res.end(); return null; }
+  ctx.res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=86400', 'Accept-Ranges': 'none' });
+  ctx.res.end(f.buf);
+  return null;
+}, { public: true });
+
+// ---- Zakovat savollari (baza) ----
+route('GET', '/api/bank', async (ctx) => bank.list(ctx.uid, ctx.query.get('pack'), ctx.query.get('q')));
+route('GET', '/api/bank/:key', async (ctx) => bank.open(ctx.uid, ctx.params.key));
+route('POST', '/api/bank/:key/check', async (ctx) => bank.check(ctx.uid, ctx.params.key, ctx.body.text));
+route('POST', '/api/bank/:key/reveal', async (ctx) => bank.reveal(ctx.uid, ctx.params.key));
+route('GET', '/api/bimg/:key', async (ctx) => {
+  const buf = await bank.image(ctx.params.key, ctx.query.get('k'));
+  if (!buf) { ctx.res.writeHead(404); ctx.res.end(); return null; }
+  ctx.res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' }); ctx.res.end(buf); return null;
+}, { public: true });
+
+// ---- Penalti ----
+route('POST', '/api/pen/quick', async (ctx) => penalty.quick(ctx.uid));
+route('POST', '/api/pen/quick-cancel', async (ctx) => { penalty.quickCancel(ctx.uid); return { ok: true }; });
+route('POST', '/api/pen/ai', async (ctx) => ({ id: penalty.vsAi(ctx.uid).id }));
+route('POST', '/api/pen/friend', async (ctx) => { const m = penalty.friendCreate(ctx.uid); return { id: m.id, code: m.code }; });
+route('POST', '/api/pen/join', async (ctx) => ({ id: penalty.friendJoin(ctx.uid, ctx.body.code).id }));
+route('GET', '/api/pen/active', async (ctx) => ({ id: (penalty.activeOf(ctx.uid) || {}).id || null }));
+route('GET', '/api/pen/:id', async (ctx) => penalty.view(penalty.get(ctx.params.id), ctx.uid));
+route('POST', '/api/pen/:id/pick', async (ctx) => penalty.userPick(ctx.uid, ctx.params.id, ctx.body.zone));
+route('POST', '/api/pen/:id/leave', async (ctx) => { penalty.cancel(ctx.uid, ctx.params.id); return { ok: true }; });
+route('GET', '/api/pt', async (ctx) => ({ list: penalty.tList(ctx.uid, ctx.sup, ctx.query.get('f'), ctx.query.get('q')) }));
+route('POST', '/api/pt', async (ctx) => ({ id: penalty.tCreate(ctx.uid, ctx.body).id }));
+route('GET', '/api/pt/:id', async (ctx) => penalty.tGet(ctx.uid, ctx.sup, ctx.params.id));
+route('POST', '/api/pt/:id/act', async (ctx) => penalty.tAction(ctx.uid, ctx.sup, ctx.params.id, ctx.body || {}));
+route('POST', '/api/pt/:id/play', async (ctx) => penalty.tPlay(ctx.uid, ctx.sup, ctx.params.id));
+route('GET', '/api/bot-avatar/:seed', async (ctx) => {
+  ctx.res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=604800' });
+  ctx.res.end(penalty.avatarSvg(String(ctx.params.seed).replace(/\.svg$/, '')));
+  return null;
+}, { public: true });
 
 // ---- To'siq ----
 route('POST', '/api/q/quick', async (ctx) => tosiq.quick(ctx.uid));
@@ -221,6 +272,25 @@ route('GET', '/api/admin/status', async () => {
     publicUrl: cfg.PUBLIC_URL, settings: d.daily.settings, nextFreeDate: daily.nextFreeDate(),
   };
 }, A);
+route('POST', '/api/admin/claim-super', async (ctx) => { await users.claimSuper(ctx.uid); return { ok: true }; });
+const SUP = { admin: true, super: true };
+route('GET', '/api/admin/users', async (ctx) => {
+  const q = String(ctx.query.get('q') || '').toLowerCase().trim();
+  let arr = Object.values(db.get().users);
+  const total = arr.length;
+  if (q) arr = arr.filter((u) => (u.name || '').toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q) || String(u.id) === q);
+  arr.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+  const day = Date.now() - 86400e3, week = Date.now() - 7 * 86400e3;
+  const all = Object.values(db.get().users);
+  return {
+    total, today: all.filter((u) => u.createdAt > day).length, active: all.filter((u) => (u.lastSeen || 0) > week).length,
+    users: arr.slice(0, 300).map((u) => ({ ...users.brief(u), username: u.username, tgName: u.tgName, createdAt: u.createdAt, lastSeen: u.lastSeen, st: u.st })),
+  };
+}, SUP);
+route('GET', '/api/admin/groups', async () => ({ groups: Object.values(db.get().groups).sort((a, b) => b.at - a.at) }), SUP);
+route('GET', '/api/admin/bank', async () => ({ items: bank.adminList() }), A);
+route('POST', '/api/admin/bank', async (ctx) => ({ id: await bank.adminSave(ctx.body) }), A);
+route('DELETE', '/api/admin/bank/:id', async (ctx) => { bank.adminDelete(ctx.params.id); return { ok: true }; }, A);
 route('GET', '/api/admin/daily', async () => ({ questions: daily.adminList(), settings: db.get().daily.settings, nextFreeDate: daily.nextFreeDate() }), A);
 route('GET', '/api/admin/daily/:id', async (ctx) => daily.adminDetail(ctx.params.id), A);
 route('POST', '/api/admin/daily', async (ctx) => ({ id: await daily.adminSave(ctx.body) }), A);
@@ -274,7 +344,7 @@ async function startPolling() {
   let offset = 0;
   while (polling) {
     try {
-      const ups = await tg.call('getUpdates', { offset, timeout: 50, allowed_updates: ['message'] });
+      const ups = await tg.call('getUpdates', { offset, timeout: 50, allowed_updates: ['message', 'my_chat_member', 'inline_query'] });
       for (const u of ups) { offset = u.update_id + 1; bot.handleUpdate(u); }
     } catch (e) { console.error('[poll]', e.message); await new Promise((r) => setTimeout(r, 3000)); }
   }
@@ -294,7 +364,7 @@ async function main() {
   if (cfg.BOT_TOKEN && !cfg.DEV) {
     if (cfg.PUBLIC_URL) {
       try {
-        await tg.call('setWebhook', { url: cfg.PUBLIC_URL + WEBHOOK_PATH, secret_token: WEBHOOK_SECRET, allowed_updates: ['message'], drop_pending_updates: false });
+        await tg.call('setWebhook', { url: cfg.PUBLIC_URL + WEBHOOK_PATH, secret_token: WEBHOOK_SECRET, allowed_updates: ['message', 'my_chat_member', 'inline_query'], drop_pending_updates: false });
         console.log('[bot] webhook o\'rnatildi');
       } catch (e) { console.error('[bot] webhook xatosi, polling ishlatiladi:', e.message); startPolling(); }
     } else {

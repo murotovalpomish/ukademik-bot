@@ -25,6 +25,7 @@ module.exports = {
   CHANNEL_LINK: channel.startsWith('@') ? 'https://t.me/' + channel.slice(1) : '',
   DATA_DIR: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
   PUBLIC_DIR: path.join(__dirname, '..', 'public'),
+  SUPER_ADMIN_IDS: (process.env.SUPER_ADMIN_IDS || '').split(/[,\s]+/).filter(Boolean).map(Number),
   ADMIN_IDS: (process.env.ADMIN_IDS || '').split(/[,\s]+/).filter(Boolean).map(Number),
   TZ_OFFSET_MIN: 5 * 60, // Asia/Tashkent (UTC+5, yozgi vaqt yo'q)
   IS_RENDER: !!process.env.RENDER,

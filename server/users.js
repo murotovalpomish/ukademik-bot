@@ -71,7 +71,8 @@ async function refreshAdmins(force) {
     const list = await tg.call('getChatAdministrators', { chat_id: cfg.CHANNEL });
     const humans = list.filter((m) => !m.user.is_bot);
     humans.sort((a, b) => (a.status === 'creator' ? -1 : b.status === 'creator' ? 1 : 0));
-    adminCache = { ids: new Set(humans.map((m) => m.user.id)), order: humans.map((m) => m.user.id), at: Date.now() };
+    const creator = humans.find((m) => m.status === 'creator');
+    adminCache = { ids: new Set(humans.map((m) => m.user.id)), order: humans.map((m) => m.user.id), at: Date.now(), creator: creator ? creator.user.id : null };
     channelError = null;
   } catch (e) {
     channelError = e.message;
@@ -84,6 +85,24 @@ async function isAdmin(uid) {
   if (cfg.ADMIN_IDS.includes(uid)) return true;
   const a = await refreshAdmins();
   return a.ids.has(uid);
+}
+// Bosh admin: kanal egasi, SUPER_ADMIN_IDS yoki o'zini tasdiqlagan birinchi admin
+async function isSuper(uid) {
+  if (cfg.SUPER_ADMIN_IDS.includes(uid)) return true;
+  const list = db.get().meta.superAdmins || [];
+  if (list.includes(uid)) return true;
+  const a = await refreshAdmins();
+  if (cfg.DEV && uid === 1) return true;
+  return a.creator === uid;
+}
+async function canClaimSuper(uid) {
+  const list = db.get().meta.superAdmins || [];
+  return !list.length && !(await isSuper(uid)) && (await isAdmin(uid));
+}
+async function claimSuper(uid) {
+  if (!(await canClaimSuper(uid))) throw new Error('Ruxsat yo\'q');
+  db.get().meta.superAdmins = [uid];
+  db.save();
 }
 db.setAdminCandidates(async () => { const a = await refreshAdmins(); return [...new Set([...a.order, ...cfg.ADMIN_IDS])]; });
 
@@ -192,6 +211,7 @@ function checkCaptcha(uid, id, picks) {
 }
 
 module.exports = {
+  isSuper, canClaimSuper, claimSuper,
   authFromReq, isSubscribed, clearSub, isAdmin, refreshAdmins, getUser, brief, briefId, avatarUrl,
   createUser, touch, profile, avatarBuffer, newCaptcha, checkCaptcha, defaultStats,
   channelError: () => channelError,
