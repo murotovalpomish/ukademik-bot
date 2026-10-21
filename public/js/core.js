@@ -62,7 +62,9 @@ function toast(text, type) {
   const el = document.createElement('div');
   el.className = 'toast ' + (type || '');
   el.textContent = text;
-  $('#toasts').appendChild(el);
+  const box = $('#toasts');
+  while (box.children.length >= 2) box.firstChild.remove();
+  box.appendChild(el);
   setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2800);
 }
 function errToast(e) { toast(e && e.message ? e.message : String(e), 'err'); haptic('error'); }
@@ -137,29 +139,84 @@ function pickImage(maxSize, square, quality = 0.82) {
   });
 }
 
-// ---------- Ovoz (WebAudio) ----------
-let actx = null;
-function audio() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } } if (actx && actx.state === 'suspended') actx.resume(); return actx; }
-function tone(freq, dur, { type = 'sine', vol = 0.35, when = 0 } = {}) {
-  const ctx = audio(); if (!ctx) return;
-  const t = ctx.currentTime + when;
-  const o = ctx.createOscillator(), g = ctx.createGain();
-  o.type = type; o.frequency.setValueAtTime(freq, t);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
-  g.gain.setValueAtTime(vol, t + Math.max(0.03, dur - 0.08)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + dur + 0.05);
-}
-const SFX = {
-  start() { tone(880, 0.35, { type: 'triangle' }); },
-  pre() { tone(1320, 0.12, { vol: .3 }); tone(1320, 0.12, { vol: .3, when: .18 }); },
-  main() { tone(660, 0.9, { type: 'square', vol: .18 }); tone(990, 0.9, { type: 'sine', vol: .25 }); },
-  end() { tone(523, 0.25, { type: 'triangle' }); tone(523, 0.25, { type: 'triangle', when: .3 }); tone(392, 0.6, { type: 'triangle', when: .6 }); },
-  click() { tone(1200, 0.05, { vol: .12, type: 'triangle' }); },
-  buzz() { tone(220, 0.3, { type: 'sawtooth', vol: .2 }); },
-  ok() { tone(784, 0.12, { vol: .25 }); tone(1046, 0.25, { vol: .25, when: .12 }); },
-  bad() { tone(300, 0.2, { type: 'sawtooth', vol: .15 }); tone(200, 0.35, { type: 'sawtooth', vol: .15, when: .18 }); },
-  tick() { tone(1000, 0.04, { vol: .1 }); },
+// ---------- Ovoz ----------
+// Tovushlar WAV fayl sifatida yaratiladi va <audio> orqali chalinadi:
+// iPhone "jim" rejimida ham, Telegram ichida ham ishonchli eshitiladi.
+const SND_NOTES = {
+  start: [[880, 0, .32, 'tri', .9], [1320, .05, .25, 'sin', .35]],
+  mid: [[1046, 0, .14, 'sin', .9], [1046, .2, .14, 'sin', .9]],
+  pre: [[1480, 0, .11, 'sq', .45], [1480, .17, .11, 'sq', .45], [1480, .34, .11, 'sq', .45]],
+  main: [[660, 0, .95, 'sq', .35], [990, 0, .95, 'sin', .6], [1320, 0, .95, 'sin', .25]],
+  end: [[523, 0, .22, 'tri', .9], [523, .28, .22, 'tri', .9], [392, .56, .7, 'tri', .9]],
+  click: [[1200, 0, .05, 'tri', .4]],
+  buzz: [[220, 0, .3, 'saw', .45]],
+  ok: [[784, 0, .12, 'sin', .8], [1046, .12, .25, 'sin', .8]],
+  bad: [[300, 0, .2, 'saw', .35], [200, .18, .35, 'saw', .35]],
+  tick: [[1000, 0, .04, 'sin', .35]],
+  whistle: [[2600, 0, .5, 'sin', .5], [2750, 0, .5, 'sin', .3]],
+  goal: [[523, 0, .15, 'tri', .8], [659, .15, .15, 'tri', .8], [784, .3, .4, 'tri', .9]],
 };
+function synthWav(notes) {
+  const sr = 22050;
+  const len = Math.ceil(sr * Math.max(...notes.map((n) => n[1] + n[2])) + sr * 0.05);
+  const buf = new Float32Array(len);
+  for (const [f, t0, d, type, v] of notes) {
+    const s0 = Math.floor(t0 * sr), n = Math.floor(d * sr);
+    for (let i = 0; i < n; i++) {
+      const ph = (f * i / sr) % 1;
+      let x = type === 'sq' ? (ph < .5 ? 1 : -1) : type === 'saw' ? 2 * ph - 1 : type === 'tri' ? 1 - 4 * Math.abs(ph - .5) : Math.sin(2 * Math.PI * ph);
+      const env = Math.min(1, i / (sr * .008)) * Math.min(1, (n - i) / (sr * .06));
+      buf[s0 + i] += x * v * env;
+    }
+  }
+  let peak = 0; for (const x of buf) peak = Math.max(peak, Math.abs(x));
+  const k = peak > 0 ? 0.95 / peak : 1;
+  const out = new DataView(new ArrayBuffer(44 + len * 2));
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) out.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); out.setUint32(4, 36 + len * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true); out.setUint32(24, sr, true);
+  out.setUint32(28, sr * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true); w(36, 'data'); out.setUint32(40, len * 2, true);
+  for (let i = 0; i < len; i++) out.setInt16(44 + i * 2, Math.max(-1, Math.min(1, buf[i] * k)) * 32767, true);
+  return URL.createObjectURL(new Blob([out.buffer], { type: 'audio/wav' }));
+}
+const SND = {};
+function sndPool(name) {
+  if (!SND[name]) {
+    const url = synthWav(SND_NOTES[name]);
+    SND[name] = { url, els: [new Audio(url), new Audio(url)], i: 0 };
+    SND[name].els.forEach((a) => { a.preload = 'auto'; });
+  }
+  return SND[name];
+}
+let audioUnlocked = false;
+function audio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { }
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  if (!App.voiceEl) {
+    const v = App.voiceEl = new Audio(sndPool('tick').url);
+    v.muted = true;
+    const pr = v.play(); if (pr && pr.then) pr.then(() => { v.pause(); v.muted = false; }).catch(() => { v.muted = false; });
+  }
+  for (const name of Object.keys(SND_NOTES)) {
+    for (const a of sndPool(name).els) {
+      a.muted = true;
+      const p = a.play();
+      if (p && p.then) p.then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; audioUnlocked = false; });
+      else { a.pause(); a.muted = false; }
+    }
+  }
+}
+function playSnd(name) {
+  try {
+    const p = sndPool(name);
+    const a = p.els[p.i++ % p.els.length];
+    a.muted = false; a.volume = 1; a.currentTime = 0;
+    const r = a.play(); if (r && r.catch) r.catch(() => { });
+  } catch (e) { }
+}
+const SFX = {};
+for (const k of Object.keys(SND_NOTES)) SFX[k] = () => playSnd(k);
 
 // ---------- Mavzu (kunduzgi / tungi) ----------
 function themePref() { try { return localStorage.getItem('theme') || 'auto'; } catch (e) { return 'auto'; } }

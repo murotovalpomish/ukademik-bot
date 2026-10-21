@@ -16,7 +16,7 @@ page('gate', {
     }
     if (me.gate === 'subscribe') return renderSubscribe(el, me);
     if (me.gate === 'captcha') return renderCaptcha(el, me);
-    App.user = me.user; App.isAdmin = me.isAdmin; App.bot = me.bot; App.channelLink = me.channelLink;
+    App.user = me.user; App.isAdmin = me.isAdmin; App.isSuper = me.isSuper; App.canClaim = me.canClaim; App.bot = me.bot; App.channelLink = me.channelLink;
     startUserStream();
     routeStart();
   },
@@ -41,12 +41,12 @@ function renderSubscribe(el, me) {
 async function renderCaptcha(el, me) {
   let picks = new Set();
   const c = await api('/api/captcha');
-  el.innerHTML = `<div class="gate">
+  el.innerHTML = `<div class="gate compact">
     <div class="logo">🤖</div>
     <h1>Bot emasligingizni tasdiqlang</h1>
-    <p>Salom, <b>${esc(me.tgName || '')}</b>! Quyidagi rasmlardan <b>barcha futbol to'plarini ⚽</b> belgilang.</p>
+    <p>Salom, <b>${esc(me.tgName || '')}</b>! Barcha <b>futbol to'plarini ⚽</b> belgilang.</p>
     <div class="captcha-grid">${c.cells.map((e, i) => `<button data-i="${i}">${e}</button>`).join('')}</div>
-    <button class="btn lg block" id="ok">Tasdiqlash</button>
+    <button class="btn mid" id="ok">✓ Tasdiqlash</button>
   </div>`;
   $$('.captcha-grid button', el).forEach((b) => b.onclick = () => {
     const i = Number(b.dataset.i);
@@ -74,6 +74,7 @@ function startUserStream() {
   userStreamClose = stream(['u:' + App.user.id], {
     toast: (d) => { toast(d.text); haptic('light'); },
     'q:matched': (d) => { if (App.cur === 'tosiqSearch') go('tosiqGame', { id: d.id }, { replace: true }); },
+    'pen:matched': (d) => { if (App.cur === 'penSearch') go('penGame', { id: d.id }, { replace: true }); },
   });
 }
 
@@ -87,7 +88,11 @@ function routeStart() {
   if (r === 'daily') go('daily');
   else if (r === 'rating') go('rating');
   else if (r === 'timer') go('timer');
-  else if (r === 'football') go('football');
+  else if (r === 'football' || r === 'penalty') go('penalty');
+  else if (r === 'tosiq') go('tosiq');
+  else if (r === 'bank') go('bank');
+  else if (r.startsWith('pen/join/')) joinPenGame(r.slice(9));
+  else if (r.startsWith('pt/')) go('penTour', { id: r.slice(3) });
   else if (r === 'admin' && App.isAdmin) go('admin');
   else if (r.startsWith('sv/')) go('svGame', { id: r.slice(3) });
   else if (r.startsWith('sv_')) go('svGame', { id: r.slice(3) });
@@ -104,13 +109,15 @@ page('home', {
         <button class="iconbtn" id="themeBtn" title="Kunduzgi/tungi rejim">${document.documentElement.dataset.theme === 'dark' ? '☀️' : '🌙'}</button></div>
       <div class="hero" id="hero"><div class="k">Kunlik Zakovat savoli</div><div class="t">Yuklanmoqda...</div><div class="d">&nbsp;</div></div>
       <div class="tiles">
-        <div class="tile g-timer" data-go="timer"><div class="ic">⏱</div><div class="t">Zakovat soati</div><div class="s">O'yin taymeri</div></div>
-        <div class="tile g-svoyak" data-go="svoyak"><div class="ic">🎯</div><div class="t">Svoyak</div><div class="s" id="svLive">Jonli o'yinlar</div></div>
-        <div class="tile g-tosiq" data-go="tosiq"><div class="ic">🧱</div><div class="t">To'siq</div><div class="s" id="tsInfo">Aqliy o'yin</div></div>
-        <div class="tile g-foot" data-go="football"><div class="ic">⚽</div><div class="t">Futbol</div><div class="s">Prognoz · Penalti</div></div>
-        <div class="tile g-rating wide" data-go="rating"><div class="ic">🏆</div><div class="t">Reyting</div><div class="s">Kim eng zukko? Kunlik savol, To'siq, Futbol</div></div>
-        ${App.isAdmin ? `<div class="tile g-admin wide" data-go="admin"><div class="ic">⚙️</div><div class="t">Admin panel</div><div class="s">Savollar, futbol o'yinlari, sozlamalar</div></div>` : ''}
+        <div class="tile g-bank" data-go="bank"><div class="ic">📚</div><div class="t">Zakovat savollari</div><div class="s" id="bankInfo">Savollar bazasi</div></div>
+        <div class="tile g-svoyak" data-go="svoyak"><div class="ic">🎯</div><div class="t">Shaxsiy o'yin</div><div class="s" id="svLive">Boshlovchi bilan o'yin</div></div>
+        <div class="tile g-timer wide" data-go="timer"><div class="ic">⏱</div><div class="t">Zakovat soati</div><div class="s">Savol · Dublet · Blits taymeri</div></div>
       </div>
+      <h2 class="sec">🎮 O'yinlar</h2>
+      <div class="tiles" style="margin-top:0">
+        <div class="tile g-tosiq" data-go="tosiq"><div class="ic">🧱</div><div class="t">To'siq</div><div class="s" id="tsInfo">Aqliy strategiya</div></div>
+        <div class="tile g-foot" data-go="penalty"><div class="ic">⚽</div><div class="t">Penalti</div><div class="s">Onlayn · Turnirlar</div></div>
+        ${App.isAdmin ? `<div class="tile g-admin wide" data-go="admin"><div class="ic">⚙️</div><div class="t">Admin panel</div><div class="s">${App.isSuper ? 'Bosh admin · ' : ''}Savollar, obunachilar, sozlamalar</div></div>` : ''}
     </div>`;
     $$('[data-go]', el).forEach((t) => t.onclick = () => { haptic('light'); go(t.dataset.go); });
     $('#themeBtn').onclick = () => { setThemePref(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'); haptic('select'); go('home'); };
@@ -135,6 +142,8 @@ page('home', {
         hero.innerHTML = `<div class="k">Kunlik Zakovat savoli</div><div class="t">Tez orada birinchi savol!</div><div class="d">${h.daily.next ? `Keyingi savol: ${fmtDay(h.daily.next.date)}, soat ${h.daily.next.time}` : 'Kanal yangiliklarini kuzatib boring'}</div>`;
       }
       if (h.svoyakLive) $('#svLive').innerHTML = `<span class="live-dot"></span> ${h.svoyakLive} ta jonli o'yin`;
+      if (h.bank && h.bank.total) $('#bankInfo').textContent = `${h.bank.solved} / ${h.bank.total} yechilgan`;
+      if (h.penActive) { const b2 = document.createElement('div'); b2.className = 'notice mt'; b2.style.cursor = 'pointer'; b2.innerHTML = '⚽ Penalti o\'yiningiz davom etmoqda — qaytish uchun bosing'; b2.onclick = () => go('penGame', { id: h.penActive }); $('.tiles', el).before(b2); }
       $('#tsInfo').textContent = `Reyting: ${Math.round(App.user.st.qr)}`;
       if (h.activeGame) {
         const b = document.createElement('div');
@@ -148,7 +157,7 @@ page('home', {
 });
 
 // ---------- Reyting ----------
-const RATING_TABS = [['daily', '🧠 Savol', 'ball'], ['tosiq', '🧱 To\'siq', 'reyting'], ['football', '⚽ Prognoz', 'ball'], ['penalty', '🥅 Penalti', 'g\'alaba']];
+const RATING_TABS = [['daily', '🧠 Kunlik savol', 'ball'], ['tosiq', '🧱 To\'siq', 'reyting'], ['penalty', '⚽ Penalti', 'g\'alaba']];
 page('rating', {
   nav: true,
   async render(el, p) {

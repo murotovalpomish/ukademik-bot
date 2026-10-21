@@ -122,14 +122,16 @@ page('timer', {
     }
 
     const snd = (f) => { if (S.sound) SFX[f](); };
+    const testSnd = () => { audio(); SFX.start(); };
     function startSeg() {
-      T.phase = 'run'; T.segStart = Date.now(); T.warned = false;
+      T.phase = 'run'; T.segStart = Date.now(); T.warned = false; T.midDone = false;
       snd('start'); keepAwake(true); controls();
     }
     function endSeg() {
       const m = mode();
-      snd('main'); haptic('heavy');
-      if (T.seg < m.segs.length - 1) { T.seg++; T.phase = 'between'; controls(); return; }
+      const last = T.seg >= m.segs.length - 1;
+      snd(last ? 'main' : 'mid'); haptic('heavy');
+      if (!last) { T.seg++; T.phase = 'between'; controls(); return; }
       if (S.write) { T.phase = 'write'; T.writeStart = Date.now(); controls(); return; }
       finish();
     }
@@ -147,7 +149,11 @@ page('timer', {
       const m = mode();
       if (T.phase === 'run') {
         const el2 = (Date.now() - T.segStart) / 1000;
-        if (S.warn && m.warnAt && !S.manual && !T.warned && el2 >= m.warnAt) { T.warned = true; snd('pre'); haptic('warning'); }
+        const segLen = m.segs[T.seg];
+        // Oraliq signal: bitta uzun savolda yarmida (30-soniya)
+        if (m.segs.length === 1 && segLen >= 40 && !T.midDone && el2 >= segLen / 2) { T.midDone = true; snd('mid'); haptic('medium'); }
+        // Tugashiga 10 soniya qolganda ogohlantirish (barcha rejimlarda)
+        if (S.warn && segLen >= 20 && !T.warned && el2 >= segLen - 10) { T.warned = true; snd('pre'); haptic('warning'); }
         if (el2 >= m.segs[T.seg]) endSeg();
       } else if (T.phase === 'write' && Date.now() - T.writeStart >= WRITE * 1000) finish();
       const nowT = Date.now();
@@ -165,9 +171,10 @@ page('timer', {
         ${sw('hand', 'Raqamlar o\'rniga strelka')}
         ${sw('ccw', 'Soat strelkasiga teskari sanash')}
         <div class="muted small" style="font-weight:800;margin-top:14px">VAQT</div>
-        ${sw('warn', '10 soniya qolganda signal', 'Faqat «Savol» rejimida (50-soniyada)')}
+        ${sw('warn', '10 soniya qolganda signal', 'Har bir savol vaqti tugashiga 10 soniya qolganda')}
         ${sw('write', 'Javob yozish uchun vaqt', 'Asosiy vaqtdan keyin yana 10 soniya')}
-        ${sw('sound', 'Ovozli signallar')}
+        ${sw('sound', 'Ovozli signallar', 'Boshlanish, oraliq, 10 soniya qoldi va tugash signallari')}
+        <button class="btn plain sm mt" id="zsTest" style="margin-bottom:6px">🔊 Ovozni sinab ko'rish</button>
         ${sw('manual', 'Qo\'lda rejim', 'Taymerni qo\'lda to\'xtatib-davom ettirish (nostandart blits, tetrablits uchun)')}
         <div class="muted small" style="font-weight:800;margin:14px 0 8px">REJIM</div>
         <div class="seg" id="zsTp"><button data-v="light" class="${tp === 'light' ? 'on' : ''}">☀️ Kunduzgi</button><button data-v="dark" class="${tp === 'dark' ? 'on' : ''}">🌙 Tungi</button><button data-v="auto" class="${tp === 'auto' ? 'on' : ''}">📱 Qurilmadek</button></div>
@@ -178,6 +185,7 @@ page('timer', {
       });
       $$('#zsTp button', m.el).forEach((b) => b.onclick = () => { setThemePref(b.dataset.v); $$('#zsTp button', m.el).forEach((x) => x.classList.toggle('on', x === b)); $('#zsTheme').textContent = document.documentElement.dataset.theme === 'dark' ? '☀️' : '🌙'; });
       $('#zsOk', m.el).onclick = m.close;
+      $('#zsTest', m.el).onclick = () => { audio(); SFX.start(); setTimeout(() => SFX.mid(), 600); setTimeout(() => SFX.pre(), 1300); setTimeout(() => SFX.main(), 2100); };
     }
 
     renderModes(); controls(); drawDial(); display();

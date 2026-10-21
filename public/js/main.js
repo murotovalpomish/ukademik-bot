@@ -11,6 +11,6 @@
   }
   applyTheme();
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
-  document.addEventListener('pointerdown', () => audio(), { once: true });
+  ['pointerdown', 'touchend', 'click'].forEach((ev) => document.addEventListener(ev, () => audio(), { once: true, capture: true }));
   go('gate', {}, { root: true });
 })();

@@ -68,6 +68,7 @@ page('tosiqFriend', {
     $('#fNew').onclick = async () => {
       try {
         const r = await post('/api/q/friend');
+        return go('tosiqGame', { id: r.id }, { replace: true });
         $('#fNew').remove();
         $('#fRoom').innerHTML = `<div class="sv-code mt">${r.code}</div><div class="center muted small mt"><span class="spinner" style="display:inline-block;width:14px;height:14px;vertical-align:middle"></span> Do'stingiz kutilmoqda...</div><button class="btn block mt" id="fShare">📤 Taklif yuborish</button>`;
         $('#fShare').onclick = () => shareLink(`https://t.me/${App.bot}?start=q_${r.code}`, `🧱 To'siq o'yiniga taklif qilaman! Kod: ${r.code}`);
@@ -98,6 +99,13 @@ page('tosiqGame', {
     let g;
     try { g = await api('/api/q/' + p.id); } catch (e) { toast(e.message, 'err'); return go('tosiq', {}, { replace: true }); }
     const E = window.QEngine;
+    if (g.status === 'waiting') {
+      tsWrap(el, `${TS_LOGO}<div class="card center mt"><div style="font-size:44px">⏳</div><h3>Raqib kutilmoqda</h3>${g.code ? `<div class="sv-code mt">${g.code}</div><button class="btn block mt" id="wsh">📤 Taklif yuborish</button>` : ''}<button class="btn plain block mt sm" id="wcx">Bekor qilish</button></div>`);
+      const sh = $('#wsh'); if (sh) sh.onclick = () => shareLink(`https://t.me/${App.bot}?start=q_${g.code}`, `🧱 To'siq o'ynaymizmi? Kod: ${g.code}`);
+      $('#wcx').onclick = async () => { await post(`/api/q/${g.id}/resign`).catch(() => { }); go('tosiq', {}, { replace: true }); };
+      cleanup(stream(['q:' + g.id], { state: (s2) => { if (s2.status !== 'waiting') go('tosiqGame', { id: g.id }, { replace: true }); } }));
+      return;
+    }
     let recvAt = Date.now(), wallMode = null, ghost = null, drag = null, overShown = false, lastWallCount = g.st.walls.length;
     const me = g.me;
     const flip = me === 1;

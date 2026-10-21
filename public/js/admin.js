@@ -9,7 +9,7 @@ page('admin', {
     if (!App.isAdmin) return go('home');
     const tab = p.tab || 'daily';
     el.innerHTML = `<div class="page nonav">${pageHead('⚙️ Admin panel')}
-      <div class="tabs">${[['daily', '🧠 Savollar'], ['fb', '⚽ Futbol'], ['set', '🔧 Sozlamalar']].map(([k, t]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${t}</button>`).join('')}</div><div id="adm"></div></div>`;
+      <div class="tabs">${[['daily', '🧠 Kunlik'], ['bank', '📚 Baza'], ['set', '🔧 Sozlama'], ...(App.isSuper ? [['users', '👥 Obunachilar'], ['groups', '💬 Guruhlar']] : [])].map(([k, t]) => `<button class="tab ${k === tab ? 'on' : ''}" data-t="${k}">${t}</button>`).join('')}</div><div id="adm"></div></div>`;
     $$('.tab', el).forEach((b) => b.onclick = () => { App.stack.pop(); go('admin', { tab: b.dataset.t }); });
     const box = $('#adm');
     if (tab === 'daily') {
@@ -19,6 +19,27 @@ page('admin', {
         ${d.questions.length ? d.questions.map((q) => `<div class="card adm-q" data-q="${q.id}"><div class="row mb">${ST_BADGE[q.status]}<span class="small muted grow">№${q.num} · ${fmtDay(q.date)}</span>${q.appeals ? `<span class="badge red">⚖️ ${q.appeals}</span>` : ''}<span class="badge gray">👥 ${q.count}</span></div><div class="txt">${esc(q.text || '(rasmli savol)')}</div><div class="small mt"><b>Javob:</b> ${esc(q.answers.join(' / '))}</div>${q.postError ? `<div class="small" style="color:var(--red)">⚠️ Kanalga chiqmadi: ${esc(q.postError)}</div>` : ''}</div>`).join('') : '<div class="empty"><div class="e">📝</div>Hali savollar yo\'q</div>'}`;
       $('#newQ').onclick = () => go('adminQ', {});
       $$('[data-q]', box).forEach((c) => c.onclick = () => go('adminQ', { id: Number(c.dataset.q) }));
+    } else if (tab === 'bank') {
+      const d = await api('/api/admin/bank');
+      box.innerHTML = `<button class="btn block lg" id="newB">➕ Bazaga savol qo'shish</button><div class="muted small mt mb">Yopilgan kunlik savollar bazaga avtomatik qo'shiladi. Bu yerda mashq uchun qo'shimcha savollar qo'shasiz (to'plamlarga ajratib).</div>
+        ${d.items.map((q) => `<div class="card adm-q" data-b="${q.id}"><div class="row mb"><span class="badge">${esc(q.pack)}</span><span class="small muted grow">#${q.id}</span></div><div class="txt">${esc(q.text || '(rasmli savol)')}</div><div class="small mt"><b>Javob:</b> ${esc(q.answers.join(' / '))}</div></div>`).join('') || '<div class="empty"><div class="e">📚</div>Qo\'shimcha savollar yo\'q</div>'}`;
+      $('#newB').onclick = () => go('adminB', {});
+      $$('[data-b]', box).forEach((c) => c.onclick = () => go('adminB', { id: Number(c.dataset.b) }));
+    } else if (tab === 'users') {
+      const render = async (q) => {
+        const d = await api('/api/admin/users?q=' + encodeURIComponent(q || ''));
+        $('#ul').innerHTML = `<div class="stats mb"><div class="stat"><div class="v">${d.total}</div><div class="l">Jami obunachilar</div></div><div class="stat"><div class="v">${d.active}</div><div class="l">7 kunda faol</div></div></div>
+          <div class="small muted mb">Bugun qo'shilgan: <b>${d.today}</b></div>
+          <div class="list">${d.users.map((u) => `<div class="li">${av(u, 38)}<div class="grow" style="min-width:0"><div class="t ell">${esc(u.name)}</div><div class="s ell">${u.username ? '@' + esc(u.username) + ' · ' : ''}ID ${u.id} · ${fmtDT(u.createdAt)}</div></div><div class="small muted" style="text-align:right">${u.lastSeen ? fmtDT(u.lastSeen) : ''}</div></div>`).join('')}</div>`;
+      };
+      box.innerHTML = `<input class="input mb" id="uq" placeholder="🔎 Ism, @username yoki ID"><div id="ul"></div>`;
+      let tt = null; $('#uq').oninput = (e) => { clearTimeout(tt); tt = setTimeout(() => render(e.target.value), 350); };
+      await render('');
+    } else if (tab === 'groups') {
+      const d = await api('/api/admin/groups');
+      const st = { administrator: ['Admin', 'green'], member: ['A\'zo', 'gray'], left: ['Chiqarilgan', 'red'], kicked: ['Chiqarilgan', 'red'], creator: ['Ega', 'green'], restricted: ['Cheklangan', 'red'] };
+      box.innerHTML = `<div class="muted small mb">Bot qo'shilgan guruh va kanallar (bot qo'shilgan paytdan boshlab qayd etiladi).</div>
+        ${d.groups.length ? `<div class="list">${d.groups.map((g) => `<div class="li"><div class="av" style="--s:38px;--c:#5b7cfa">${g.type === 'channel' ? '📢' : '👥'}</div><div class="grow" style="min-width:0"><div class="t ell">${esc(g.title)}</div><div class="s ell">${g.username ? '@' + esc(g.username) + ' · ' : ''}${g.by ? 'qo\'shgan: ' + esc(g.by.name) + ' · ' : ''}${fmtDT(g.at)}</div></div><span class="badge ${(st[g.status] || ['', 'gray'])[1]}">${(st[g.status] || [g.status])[0]}</span></div>`).join('')}</div>` : '<div class="empty"><div class="e">💬</div>Bot hali hech qaysi guruhga qo\'shilmagan</div>'}`;
     } else if (tab === 'fb') {
       const d = await api('/api/fb');
       const all = [...d.upcoming, ...d.finished];
@@ -35,7 +56,7 @@ page('admin', {
       });
     } else {
       const s = await api('/api/admin/status');
-      box.innerHTML = `${s.channelError ? `<div class="notice red mb">⚠️ <b>Bot kanalga admin qilinmagan</b> yoki kanal topilmadi (${esc(s.channel)}). Obuna tekshiruvi va kanalga post chiqarish ishlamaydi.<div class="small mt">${esc(s.channelError)}</div></div>` : `<div class="notice mb" style="background:var(--green-soft)">✅ Bot ${esc(s.channel)} kanalida admin — hammasi ishlayapti</div>`}
+      box.innerHTML = `${App.canClaim ? `<div class="notice mb">👑 Bosh admin hali belgilanmagan. Siz bosh admin bo'lsangiz — obunachilar, guruhlar va barcha turnirlarni boshqarasiz.<button class="btn gold block mt" id="claim">👑 Men bosh adminman</button></div>` : App.isSuper ? '<div class="notice mb" style="background:var(--gold-soft)">👑 Siz bosh adminsiz</div>' : ''}${s.channelError ? `<div class="notice red mb">⚠️ <b>Bot kanalga admin qilinmagan</b> yoki kanal topilmadi (${esc(s.channel)}). Obuna tekshiruvi va kanalga post chiqarish ishlamaydi.<div class="small mt">${esc(s.channelError)}</div></div>` : `<div class="notice mb" style="background:var(--green-soft)">✅ Bot ${esc(s.channel)} kanalida admin — hammasi ishlayapti</div>`}
         <div class="card"><h3>🕒 Kunlik savol vaqti (Toshkent)</h3>
           <div class="row"><label class="field grow"><span>E'lon qilish</span><input class="input" type="time" id="ot" value="${s.settings.openTime}"></label><label class="field grow"><span>Natijalar</span><input class="input" type="time" id="ct" value="${s.settings.closeTime}"></label></div>
           <button class="btn block" id="saveT">Saqlash</button></div>
@@ -43,6 +64,7 @@ page('admin', {
           <div>👥 Foydalanuvchilar: <b>${s.users}</b></div>
           <div>📦 Zaxira nusxa: <b>${s.backup.backup ? 'Telegram\'da saqlanmoqda ✅' : 'hali yaratilmagan (admin botga /start yozishi kerak)'}</b>${s.backup.lastBackupAt ? ` · oxirgisi ${fmtDT(s.backup.lastBackupAt)}` : ''}</div>
           <div>🌐 Manzil: <b>${esc(s.publicUrl || '—')}</b></div></div></div>`;
+      const cl = $('#claim'); if (cl) cl.onclick = async () => { try { await post('/api/admin/claim-super'); App.isSuper = true; App.canClaim = false; toast('👑 Siz bosh adminsiz', 'ok'); go('admin', { tab: 'set' }, { replace: true }); } catch (e) { errToast(e); } };
       $('#saveT').onclick = async () => { try { await post('/api/admin/settings', { openTime: $('#ot').value, closeTime: $('#ct').value }); toast('Saqlandi ✅', 'ok'); } catch (e) { errToast(e); } };
     }
   },
@@ -111,5 +133,26 @@ page('adminQ', {
     on('qpub', async () => { if (await confirmDlg('Savol hozir kanalga chiqarilsinmi?', 'E\'lon qilish')) { try { await post(`/api/admin/daily/${q.id}/publish`); toast('E\'lon qilindi 📣', 'ok'); reload(); } catch (e) { errToast(e); } } });
     on('qcl', async () => { if (await confirmDlg('Savol yopilib, natijalar kanalga chiqarilsinmi?', 'Yopish')) { try { await post(`/api/admin/daily/${q.id}/close`); toast('Natijalar e\'lon qilindi 🏁', 'ok'); reload(); } catch (e) { errToast(e); } } });
     on('qdel', async () => { if (await confirmDlg('Savol butunlay o\'chirilsinmi?', 'O\'chirish', true)) { try { await del('/api/admin/daily/' + q.id); go('admin', {}, { replace: true }); } catch (e) { errToast(e); } } });
+  },
+});
+
+page('adminB', {
+  async render(el, p) {
+    let q = null, imageData = null, removeImage = false;
+    if (p.id) q = (await api('/api/admin/bank')).items.find((x) => x.id === p.id);
+    el.innerHTML = `<div class="page nonav">${pageHead(q ? 'Savol #' + q.id : 'Bazaga savol')}<div class="card">
+      <label class="field"><span>To'plam (masalan: Tarix, Adabiyot, 2025-yil o'yinlari)</span><input class="input" id="bp" maxlength="40" value="${esc(q ? q.pack : '')}" placeholder="Umumiy"></label>
+      <label class="field"><span>Savol matni</span><textarea class="input" id="bt" style="min-height:130px">${esc(q ? q.text : '')}</textarea></label>
+      <div class="field"><div id="bimg">${q && q.image ? `<img class="dq-img" src="${esc(q.image)}">` : ''}</div><div class="row"><button class="btn sm plain" id="bpick">🖼 Rasm</button>${q && q.image ? '<button class="btn sm plain" id="brm">🗑 Rasmni olish</button>' : ''}</div></div>
+      <label class="field"><span>Javob(lar) — har biri yangi qatordan</span><textarea class="input" id="ba2" style="min-height:64px">${esc(q ? q.answers.join('\n') : '')}</textarea></label>
+      <label class="field"><span>Izoh</span><textarea class="input" id="bc" style="min-height:56px">${esc(q ? q.comment : '')}</textarea></label>
+      <label class="field"><span>Muallif</span><input class="input" id="bau" value="${esc(q ? q.author : '')}"></label>
+      <button class="btn block lg" id="bs">💾 Saqlash</button>${q ? '<button class="btn red block mt" id="bd">🗑 O\'chirish</button>' : ''}</div></div>`;
+    $('#bpick').onclick = async () => { const d = await pickImage(1100, false, 0.8); if (d) { imageData = d; $('#bimg').innerHTML = `<img class="dq-img" src="${d}">`; } };
+    const rm = $('#brm'); if (rm) rm.onclick = () => { removeImage = true; $('#bimg').innerHTML = ''; rm.remove(); };
+    $('#bs').onclick = async () => {
+      try { await post('/api/admin/bank', { id: q ? q.id : undefined, pack: $('#bp').value, text: $('#bt').value, answers: $('#ba2').value, comment: $('#bc').value, author: $('#bau').value, imageData, removeImage }); toast('Saqlandi ✅', 'ok'); go('admin', { tab: 'bank' }, { replace: true }); } catch (e) { errToast(e); }
+    };
+    const d = $('#bd'); if (d) d.onclick = async () => { if (await confirmDlg('O\'chirilsinmi?', 'O\'chirish', true)) { await del('/api/admin/bank/' + q.id); go('admin', { tab: 'bank' }, { replace: true }); } };
   },
 });
