@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="30%" cy="22%" r="95%">
+      <stop offset="0" stop-color="#4d7dff"/>
+      <stop offset=".45" stop-color="#2346c7"/>
+      <stop offset="1" stop-color="#0b1440"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset=".55" stop-color="#ffc61a"/>
+      <stop offset="1" stop-color="#e59a00"/>
+    </linearGradient>
+    <linearGradient id="u" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbe5ff"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#050a24" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="430" fill="none" stroke="#ffffff" stroke-opacity=".07" stroke-width="2"/>
+  <g filter="url(#sh)">
+    <!-- U harfi -->
+    <path d="M352 440 V610 a160 160 0 0 0 320 0 V440" fill="none" stroke="url(#u)" stroke-width="118" stroke-linecap="round"/>
+    <!-- akademik qalpoq -->
+    <path d="M512 214 L812 336 L512 458 L212 336 Z" fill="url(#gold)"/>
+    <path d="M512 458 L812 336 L812 352 L512 474 L212 352 L212 336 Z" fill="#c47f00" opacity=".55"/>
+    <!-- popuk -->
+    <path d="M512 336 L744 382 L744 548" fill="none" stroke="url(#gold)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="722" y="536" width="44" height="78" rx="14" fill="url(#gold)"/>
+    <circle cx="512" cy="336" r="20" fill="#e59a00"/>
+  </g>
+</svg>
