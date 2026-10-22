@@ -17,7 +17,7 @@ const ROUTES = {
   daily: ['🧠 Kunlik savolni ochish', 'daily', '🧠 <b>Kunlik Zakovat savoli</b>\n\nSavolni ochish uchun pastdagi tugmani bosing. Esingizda bo\'lsin: savol ochilgach vaqt hisoblana boshlaydi! ⏱'],
   rating: ['🏆 Reytingni ko\'rish', 'rating', '🏆 Ukademik reytingi'],
   timer: ['⏱ Zakovat soati', 'timer', '⏱ Zakovat soati — o\'yin taymeri'],
-  football: ['⚽ Futbol', 'football', '⚽ Prognoz va penalti'],
+  football: ['⚽ Penalti', 'penalty', '⚽ Penalti — do\'stlar bilan, onlayn va turnirlar'],
   admin: ['⚙️ Admin panel', 'admin', '⚙️ Admin panel'],
   penalty: ['⚽ Penalti', 'penalty', '⚽ Penalti — do\'stlar bilan, onlayn va turnirlar'],
   tosiq: ['🧱 To\'siq', 'tosiq', '🧱 To\'siq — aqliy strategiya o\'yini'],
@@ -49,10 +49,10 @@ async function sendWelcome(chatId, payload) {
   if (!text) {
     text = '🎓 <b>Ukademik</b> — Ukademiklar kanalining intellektual o\'yinlar boti!\n\n' +
       '🧠 <b>Kunlik savol</b> — eng tez to\'g\'ri javob bergan ko\'proq ball oladi\n' +
+      '📚 <b>Zakovat savollari</b> — mashq uchun savollar bazasi\n' +
+      '🎯 <b>Shaxsiy o\'yin</b> — boshlovchi bilan onlayn Svoyak\n' +
       '⏱ <b>Zakovat soati</b> — o\'yin taymeri\n' +
-      '🎯 <b>Svoyak</b> — boshlovchi bilan jonli o\'yin\n' +
-      '🧱 <b>To\'siq</b> — aqliy strategiya o\'yini\n' +
-      '⚽ <b>Futbol</b> — prognoz va penalti\n\n' +
+      '⚽ <b>Penalti</b> va 🧱 <b>To\'siq</b> — do\'stlar bilan, onlayn va turnirlarda\n\n' +
       'Boshlash uchun pastdagi tugmani bosing 👇';
   }
   const kb = [[{ text: btnText, web_app: { url: appUrl(route) } }]];
@@ -172,8 +172,8 @@ async function setup() {
     if (cfg.PUBLIC_URL) {
       await tg.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Ochish', web_app: { url: appUrl('') } } });
     }
-    await tg.call('setMyDescription', { description: '🎓 Ukademiklar kanalining intellektual o\'yinlar boti: kunlik Zakovat savoli, Zakovat soati, Svoyak, To\'siq va futbol prognozlari.' }).catch(() => { });
-    await tg.call('setMyShortDescription', { short_description: 'Zakovat, Svoyak, aqliy o\'yinlar va futbol — Ukademiklar uchun' }).catch(() => { });
+    await tg.call('setMyDescription', { description: '🎓 Ukademiklar kanalining intellektual o\'yinlar boti: kunlik Zakovat savoli, savollar bazasi, Shaxsiy o\'yin (onlayn Svoyak), Zakovat soati, Penalti va To\'siq o\'yinlari.\n\nBoshlash uchun «Start» tugmasini bosing 👇' }).catch(() => { });
+    await tg.call('setMyShortDescription', { short_description: 'Zakovat, Svoyak va aqliy o\'yinlar — Ukademiklar uchun' }).catch(() => { });
   } catch (e) { console.error('[bot] sozlashda xato:', e.message); }
   return me;
 }
